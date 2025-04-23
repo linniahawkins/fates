@@ -12,6 +12,10 @@ MESSAGE(" NETCDFF_FOUND = ${NETCDFF_FOUND}")
 string(APPEND LDFLAGS " -L${NETCDF_FORTRAN_DIR}/lib -lnetcdff")
 string(APPEND LDFLAGS " -L${NETCDF_C_DIR}/lib -lnetcdf")
 
+set(FTORCH_LOC "/glade/u/home/jatkinson/FTorch/bin/oneapi_2023.2.1_torch_2.1")
+string(APPEND LDFLAGS " -L${FTORCH_LOC}/lib64 -lftorch")
+string(APPEND SLIBS " -L${FTORCH_LOC}/lib64 -lftorch")
+
 include(CIME_initial_setup)
 
 project(FATES_tests Fortran C)
@@ -102,6 +106,9 @@ include_directories(${NETCDF_C_DIR}/include
                     ${NETCDF_FORTRAN_DIR}/include)
 link_directories(${NETCDF_C_DIR}/lib
                 ${NETCDF_FORTRAN_DIR}/lib)
+
+include_directories(${FTORCH_LOC}/include/ftorch)
+link_directories(${FTORCH_LOC}/lib64)
                 
 
 # Tell cmake to look for libraries & mod files here, because this is where we built libraries
