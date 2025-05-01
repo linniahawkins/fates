@@ -2,7 +2,7 @@ program MLPhenology
 
   use               FatesConstantsMod, only : r8 => fates_r8
   use              FatesArgumentUtils, only : command_line_arg
-  use                FatesTestFireMod, only : ReadDatmData
+  use             FatesUnitTestIOMod,  only : OpenNCFile, GetVar, CloseNCFile, RegisterNCDims
   use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
   !use               ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
   !                                            torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
@@ -20,6 +20,7 @@ program MLPhenology
   integer                                  :: in_layout(1) = [1]
   integer                                  :: out_layout(1) = [1] 
   integer,                       parameter :: n_days = 365
+  integer                                  :: ncid ! netcdf file unit number
 
   character(len=:),                  allocatable :: datm_file            ! input DATM 
   real(r8),                          allocatable :: ta(:)         ! daily air temperature [degC]
@@ -27,7 +28,8 @@ program MLPhenology
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
 
-  real(r8)                                       :: in_data(1) = 1.0
+  !real(r8)                                       :: in_data(1) = 1.0
+  real(r8),              dimension(60,4), target :: in_data
   real(r8),                 dimension(1), target :: out_data
 
   ! allocate arrays
@@ -39,12 +41,27 @@ program MLPhenology
   !===============
   ! load meteorological forcing data
 
-  ! read in DATM data
-  datm_file = command_line_arg(1)
-  print *, datm_file
-  call ReadDatmData(datm_file, lai, ta, pr, sw)
- 
-  print *, lai
+  ! open file
+  datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
+  call OpenNCFile(trim(datm_file), ncid, 'read')
+      
+  ! read in data
+  call GetVar(ncid, 'ta', ta)
+  call GetVar(ncid, 'pr', pr)
+  call GetVar(ncid, 'sw', sw)
+  call GetVar(ncid, 'lai', lai)   
+
+  in_data(:,1)= lai(1:60)
+  in_data(:,2)= ta(1:60)
+  in_data(:,3)= pr(1:60)
+  in_data(:,4)= sw(1:60)
+
+  ! normalize input data for pytorch model
+
+  print *, in_data(1,:)
+
+  ! close file
+  call CloseNCFile(ncid)
 
   !===============
   ! load pytorch model
