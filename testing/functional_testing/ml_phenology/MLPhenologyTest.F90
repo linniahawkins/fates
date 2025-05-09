@@ -10,7 +10,6 @@ program MLPhenology
 
   implicit none
 
-
   ! define ML model
   character(len=256) :: cb_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
   !character(len=256) :: lstm_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
@@ -21,7 +20,7 @@ program MLPhenology
   integer                                  :: in_layout(1) = [1]
   integer                                  :: out_layout(1) = [1] 
   integer,                       parameter :: n_days = 365
-  integer                                  :: ncid ! netcdf file unit number
+!  integer                                  :: ncid ! netcdf file unit number
 
   character(len=:),                  allocatable :: datm_file            ! input DATM 
   real(r8),                          allocatable :: ta(:)         ! daily air temperature [degC]
@@ -33,36 +32,83 @@ program MLPhenology
   real(r8),              dimension(60,4), target :: in_data
   real(r8),                 dimension(1), target :: out_data
 
-  ! allocate arrays
-  allocate(ta(n_days))
-  allocate(pr(n_days))
-  allocate(sw(n_days))
-  allocate(lai(n_days))
+  !LOCAL VARIABLES:
+  real(r8) :: crit_onset_gdd !critical onset growing degree-day sum
+  real(r8) :: annavg_t2m_patch ! annual average 2m air temperature (C) *in CLM it is in K but gets converted. 
+  real(r8) :: doy ! day of year (used to identify solstace) 
+  real(r8) :: offset_flag 
+  real(r8) :: offset_counter
+  real(r8) :: dt                ! time step delta t (seconds)
+  real(r8) :: dormant_flag
+  real(r8) :: days_active
+  real(r8) :: onset_flag
+  real(r8) :: onset_counter
+  integer :: ws_flag
 
-  !===============
-  ! load meteorological forcing data
-
-  ! open file
+  ! Load forcing data
   datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
-  call OpenNCFile(trim(datm_file), ncid, 'read')
-      
-  ! read in data
-  call GetVar(ncid, 'ta', ta)
-  call GetVar(ncid, 'pr', pr)
-  call GetVar(ncid, 'sw', sw)
-  call GetVar(ncid, 'lai', lai)   
+  call load_met_forcing(datm_file, ta, pr, sw, lai)
 
-  in_data(:,1)= lai(1:60)
-  in_data(:,2)= ta(1:60)
-  in_data(:,3)= pr(1:60)
-  in_data(:,4)= sw(1:60)
+  ! Populate input data (first n_input days)
+  in_data(:,1) = lai(1:60)
+  in_data(:,2) = ta(1:60)
+  in_data(:,3) = pr(1:60)
+  in_data(:,4) = sw(1:60)
 
-  ! normalize input data for pytorch model
+  ! ======================================
+  ! initialize
+  offset_flag = 0._r8
+  offset_counter = 0._r8
+  onset_flag = 1._r8
+  onset_counter = 0._r8
+  dt = 1800._r8 ! 30 minutes in seconds
+  doy = 10
 
-  print *, in_data(1,:)
+  ! ======================================
+  ! CLM CNSeasonDecidPhenology (approximate)
 
-  ! close file
-  call CloseNCFile(ncid)
+  ! set misc. constants
+  annavg_t2m_patch = 15 ! annual average patch temperature (C)
+
+  ! onset gdd sum from Biome-BGC, v4.1.2
+  crit_onset_gdd = exp(4.8_r8 + 0.13_r8*(annavg_t2m_patch))
+  print *, crit_onset_gdd
+
+  ! set flag for solstice period (winter->summer = 1, summer->winter = 0)
+  if (doy <= 171) then
+     ws_flag = 1._r8
+  else
+     ws_flag = 0._r8
+  end if
+
+  ! update offset_counter and test for the end of the offset period
+  if (offset_flag == 1.0_r8) then
+   ! decrement counter for offset period
+   offset_counter = offset_counter - dt
+   ! if this is the end of the offset_period, reset phenology
+   ! flags and indices
+   if (offset_counter < dt/2._r8) then
+      offset_flag = 0._r8
+      offset_counter = 0._r8
+      dormant_flag = 1._r8
+      days_active = 0._r8
+
+    end if
+  end if
+
+
+  ! update onset_counter and test for the end of the onset period
+  if (onset_flag == 1.0_r8) then
+     ! decrement counter for onset period
+     onset_counter = onset_counter - dt
+     ! if this is the end of the onset period, reset phenology
+     ! flags and indices
+     if (onset_counter < dt/2._r8) then
+       onset_flag = 0.0_r8
+       onset_counter = 0.0_r8
+     end if
+  end if
+
 
   !===============
   ! load pytorch model
@@ -92,5 +138,43 @@ program MLPhenology
   !call torch_delete(out_tensor(1)) 
 
   print *, "Hello Phenology"
+
+  contains
+  
+    !-----------------------------------------------------------------------
+    subroutine load_met_forcing ( datm_file, ta, pr, sw, lai)
+      ! 
+      use FatesConstantsMod, only: r8 => fates_r8
+      use FatesUnitTestIOMod, only: OpenNCFile, GetVar, CloseNCFile
     
+      implicit none
+    
+      ! Arguments
+      character(len=*), intent(in) :: datm_file
+      real(r8), allocatable, intent(out) :: ta(:), pr(:), sw(:), lai(:)
+    
+      ! Local
+      integer :: ncid
+    
+      ! Allocate arrays
+      allocate(ta(365), pr(365), sw(365), lai(365))
+    
+      ! Open and read
+      call OpenNCFile(trim(datm_file), ncid, 'read')
+      
+      call GetVar(ncid, 'ta', ta)
+      call GetVar(ncid, 'pr', pr)
+      call GetVar(ncid, 'sw', sw)
+      call GetVar(ncid, 'lai', lai)
+    
+      call CloseNCFile(ncid)
+    
+    end subroutine load_met_forcing
+    ! ----------------------------------------------------------------------
+        
 end program MLPhenology
+
+
+  
+
+
