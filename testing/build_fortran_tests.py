@@ -130,6 +130,7 @@ def get_extra_cmake_args(build_dir:str, mpilib:str) -> str:
     
     # create cmake argument list with information from the fake case and machine object
     cmake_args_list = [
+       "-Wno-dev",
       f"-DOS={os_}",
       f"-DMACH={machobj.get_machine_name()}",
       f"-DCOMPILER={compiler}",
@@ -184,6 +185,11 @@ def run_cmake(test_dir:str, pfunit_path:str, netcdf_c_path:str, netcdf_f_path:st
                                                         "src", "CMake"))
         # directory with genf90
         genf90_dir = os.path.join(_CIMEROOT, "CIME", "non_py", "externals", "genf90")
+        Torch_DIR = os.getenv("Torch_DIR")
+        cmake_prefix_path = pfunit_path
+
+        if Torch_DIR:
+            cmake_prefix_path += ";" + Torch_DIR
 
         cmake_command = [
           "cmake",
@@ -193,7 +199,7 @@ def run_cmake(test_dir:str, pfunit_path:str, netcdf_c_path:str, netcdf_f_path:st
           f"-DSRC_ROOT={get_src_root()}",
           f"-DCIME_CMAKE_MODULE_DIRECTORY={cmake_module_dir}",
           "-DCMAKE_BUILD_TYPE=CESM_DEBUG",
-          f"-DCMAKE_PREFIX_PATH={pfunit_path}",
+          f"-DCMAKE_PREFIX_PATH=\"{cmake_prefix_path}\"",
           "-DUSE_MPI_SERIAL=ON",
           "-DENABLE_GENF90=ON",
           f"-DCMAKE_PROGRAM_PATH={genf90_dir}"
@@ -207,7 +213,7 @@ def run_cmake(test_dir:str, pfunit_path:str, netcdf_c_path:str, netcdf_f_path:st
 
         cmake_command.extend(cmake_args.split(" "))
         
-        print("Running cmake for all tests.")
+        print(f"Running cmake for all tests.")
 
         run_cmd_no_fail(" ".join(cmake_command), combine_output=True)
 
