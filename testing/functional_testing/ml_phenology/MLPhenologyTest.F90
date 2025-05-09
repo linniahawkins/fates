@@ -3,7 +3,8 @@ program MLPhenology
   use               FatesConstantsMod, only : r8 => fates_r8
   use              FatesArgumentUtils, only : command_line_arg
   use             FatesUnitTestIOMod,  only : OpenNCFile, GetVar, CloseNCFile, RegisterNCDims
-  use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
+  use                ftorch
+  !use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
   !use               ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
   !                                            torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
 
@@ -13,7 +14,7 @@ program MLPhenology
   ! define ML model
   character(len=256) :: cb_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
   !character(len=256) :: lstm_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
-  !type(torch_model) :: model_pytorch                                    
+  type(torch_model) :: model_pytorch                                    
 
   ! setup Fortran data structures  
   type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
@@ -66,7 +67,7 @@ program MLPhenology
   !===============
   ! load pytorch model
 
-  !call torch_model_load(model_pytorch, trim(cb_torch_model), torch_kCPU)
+  call torch_model_load(model_pytorch, trim(cb_torch_model), torch_kCPU)
   
   ! set input data 
   !in_data = 0.5_r8
