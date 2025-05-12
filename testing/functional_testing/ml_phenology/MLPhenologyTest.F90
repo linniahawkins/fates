@@ -4,7 +4,11 @@ program MLPhenology
   use              FatesArgumentUtils, only : command_line_arg
   use             FatesUnitTestIOMod,  only : OpenNCFile, GetVar, CloseNCFile, RegisterNCDims
   use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
-  
+  !use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU, torch_model
+  !use FTorch_cesm_interface,            only : torch_tensor, torch_tensor_from_array, torch_kCPU, torch_model
+  use               ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
+                                              torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
+
   implicit none
 
   ! define ML model

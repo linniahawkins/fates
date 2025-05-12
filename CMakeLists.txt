@@ -12,13 +12,10 @@ MESSAGE(" NETCDFF_FOUND = ${NETCDFF_FOUND}")
 string(APPEND LDFLAGS " -L${NETCDF_FORTRAN_DIR}/lib -lnetcdff")
 string(APPEND LDFLAGS " -L${NETCDF_C_DIR}/lib -lnetcdf")
 
-set(FTORCH_LOC "/glade/u/home/jatkinson/FTorch/bin/oneapi_2023.2.1_torch_2.1")
-string(APPEND LDFLAGS " -L${FTORCH_LOC}/lib64 -lftorch")
-string(APPEND SLIBS " -L${FTORCH_LOC}/lib64 -lftorch")
-
 include(CIME_initial_setup)
 
-project(FATES_tests Fortran C)
+project(FATES_tests LANGUAGES Fortran C CXX)
+enable_language(Fortran)
 
 include(CIME_utils)
 
@@ -29,6 +26,11 @@ if (DEFINED ENV{ESMF_ROOT})
   list(APPEND CMAKE_MODULE_PATH $ENV{ESMF_ROOT}/cmake)
 endif()
 find_package(ESMF REQUIRED)
+
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+  set(Torch_LIB_PATH "$ENV{Torch_DIR}/lib/libstdc++.so")
+  message(STATUS "Torch lib path is: ${Torch_LIB_PATH}")
+endif()
 
 # This adds include directories needed for ESMF
 set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${ESMF_F90COMPILEPATHS} ")
@@ -43,6 +45,7 @@ set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${ESMF_F90COMPILEPATHS} ")
 link_libraries(${ESMF_INTERFACE_LINK_LIBRARIES})
 
 # Add source directories from other share code (csm_share, etc.)
+
 add_subdirectory(${HLM_ROOT}/share/src csm_share)
 add_subdirectory(${HLM_ROOT}/share/unit_test_stubs/util csm_share_stubs)
 
@@ -106,10 +109,6 @@ include_directories(${NETCDF_C_DIR}/include
                     ${NETCDF_FORTRAN_DIR}/include)
 link_directories(${NETCDF_C_DIR}/lib
                 ${NETCDF_FORTRAN_DIR}/lib)
-
-include_directories(${FTORCH_LOC}/include/ftorch)
-link_directories(${FTORCH_LOC}/lib64)
-                
 
 # Tell cmake to look for libraries & mod files here, because this is where we built libraries
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
