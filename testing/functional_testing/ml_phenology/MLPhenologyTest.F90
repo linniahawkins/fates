@@ -4,7 +4,6 @@ program MLPhenology
   use              FatesArgumentUtils, only : command_line_arg
   use             FatesUnitTestIOMod,  only : OpenNCFile, GetVar, CloseNCFile, RegisterNCDims
   use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
-  !use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU, torch_model
   !use FTorch_cesm_interface,            only : torch_tensor, torch_tensor_from_array, torch_kCPU, torch_model
   use               ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
                                               torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
@@ -20,7 +19,8 @@ program MLPhenology
   type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
   integer                                  :: in_layout(1) = [1]
   integer                                  :: out_layout(1) = [1] 
-  integer,                       parameter :: n_days = 365
+  
+  real(r8) :: doy ! day of year (used to identify solstace) 
 
   real(8), dimension(10) :: dummy_lai
   integer :: sos_flag, n
@@ -31,22 +31,14 @@ program MLPhenology
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
 
+  real(r8)                                       :: onset_gdd      ! onset growing degree days 
+  real(r8)                                       :: onset_gddflag  ! Onset freeze flag
+
   !real(r8)                                       :: in_data(1) = 1.0
   real(r8),              dimension(60,4), target :: in_data
   real(r8),                 dimension(1), target :: out_data
 
-  !LOCAL VARIABLES:
-  real(r8) :: crit_onset_gdd !critical onset growing degree-day sum
-  real(r8) :: annavg_t2m_patch ! annual average 2m air temperature (C) *in CLM it is in K but gets converted. 
-  real(r8) :: doy ! day of year (used to identify solstace) 
-  real(r8) :: offset_flag 
-  real(r8) :: offset_counter
-  real(r8) :: dt                ! time step delta t (seconds)
-  real(r8) :: dormant_flag
-  real(r8) :: days_active
-  real(r8) :: onset_flag
-  real(r8) :: onset_counter
-  integer :: ws_flag
+
 
   ! Load forcing data
   datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
@@ -60,12 +52,9 @@ program MLPhenology
 
   ! ======================================
   ! initialize
-  offset_flag = 0._r8
-  offset_counter = 0._r8
-  onset_flag = 1._r8
-  onset_counter = 0._r8
-  dt = 1800._r8 ! 30 minutes in seconds
-  doy = 10
+  doy = 0.0_r8
+  onset_gdd = 0.0_r8
+  onset_gddflag = 1.0_r8
 
 
   ! ====================================
@@ -75,51 +64,6 @@ program MLPhenology
   call get_sos(dummy_lai, n, sos_flag)
   print *, "SOS Flag:", sos_flag
   
-  ! ======================================
-  ! CLM CNSeasonDecidPhenology (approximate)
-
-  ! set misc. constants
-  annavg_t2m_patch = 15 ! annual average patch temperature (C)
-
-  ! onset gdd sum from Biome-BGC, v4.1.2
-  crit_onset_gdd = exp(4.8_r8 + 0.13_r8*(annavg_t2m_patch))
-  print *, crit_onset_gdd
-
-  ! set flag for solstice period (winter->summer = 1, summer->winter = 0)
-  if (doy <= 171) then
-     ws_flag = 1._r8
-  else
-     ws_flag = 0._r8
-  end if
-
-  ! update offset_counter and test for the end of the offset period
-  if (offset_flag == 1.0_r8) then
-   ! decrement counter for offset period
-   offset_counter = offset_counter - dt
-   ! if this is the end of the offset_period, reset phenology
-   ! flags and indices
-   if (offset_counter < dt/2._r8) then
-      offset_flag = 0._r8
-      offset_counter = 0._r8
-      dormant_flag = 1._r8
-      days_active = 0._r8
-
-    end if
-  end if
-
-
-  ! update onset_counter and test for the end of the onset period
-  if (onset_flag == 1.0_r8) then
-     ! decrement counter for onset period
-     onset_counter = onset_counter - dt
-     ! if this is the end of the onset period, reset phenology
-     ! flags and indices
-     if (onset_counter < dt/2._r8) then
-       onset_flag = 0.0_r8
-       onset_counter = 0.0_r8
-     end if
-  end if
-
 
   !===============
   ! load pytorch model
@@ -233,5 +177,74 @@ program MLPhenology
       
       
     end subroutine get_sos
+
+  !-----------------------------------------------------------------------
+    function SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, doy ) &
+                       result( do_onset )
+
+        ! !DESCRIPTION:
+        ! Function to determine if seasonal deciduous leaf onset should happen.
+        !
+        ! !ARGUMENTS:
+        real(r8), intent(INOUT) :: onset_gdd      ! onset growing degree days 
+        real(r8), intent(INOUT) :: onset_gddflag  ! Onset freeze flag
+        real(r8), intent(IN)    :: soilt          ! Soil temperature at specific level for this evaluation
+        real(r8), intent(IN)    :: doy            ! day of year
+        logical :: do_onset                       ! Flag if onset should happen (return value)
+
+        ! !LOCAL VARIABLES:
+        real(r8):: ws_flag        !winter-summer solstice flag (0 or 1)
+        real(r8):: crit_onset_gdd !critical onset growing degree-day sum
+        real(r8):: crit_dayl      ! parameter
+        real(r8):: annavg_t2m_patch        
+
+        !-----------------------------------------------------------------------
+        ! set constants
+        annavg_t2m_patch = 15 ! annual average patch temperature (C)
+        crit_dayl = 39300 ! seconds
+        
+        ! onset gdd sum from Biome-BGC, v4.1.2
+        crit_onset_gdd = exp(4.8_r8 + 0.13_r8*(annavg_t2m_patch))
+    
+        ! set flag for solstice period (winter->summer = 1, summer->winter = 0)
+        if (doy <= 171) then
+          ws_flag = 1._r8
+        else
+          ws_flag = 0._r8
+        end if
+    
+        do_onset = .false.
+        ! Test to turn on growing degree-day sum, if off.
+        ! switch on the growing degree day sum on the winter solstice
+    
+        if (onset_gddflag == 0._r8 .and. ws_flag == 1._r8) then
+            onset_gddflag = 1._r8
+            onset_gdd = 0._r8
+        end if
+    
+        ! Test to turn off growing degree-day sum, if on.
+        ! This test resets the growing degree day sum if it gets past
+        ! the summer solstice without reaching the threshold value.
+        ! In that case, it will take until the next winter solstice
+        ! before the growing degree-day summation starts again.
+    
+        if (onset_gddflag == 1._r8 .and. ws_flag == 0._r8) then
+            onset_gddflag = 0._r8
+            onset_gdd = 0._r8
+        end if
+    
+        ! if the gdd flag is set, and if the soil is above freezing
+        ! then accumulate growing degree days for onset trigger
+    
+        if (onset_gddflag == 1.0_r8 .and. soilt > 273.15_r8) then
+            onset_gdd = onset_gdd + (soilt-273.15_r8)
+        end if
+
+        ! set do_onset if critical growing degree-day sum is exceeded
+        if (onset_gdd > crit_onset_gdd) then
+            do_onset = .true.
+        end if
+    
+      end function SeasonalDecidOnset
         
 end program MLPhenology
