@@ -3,25 +3,13 @@ program MLPhenology
   use               FatesConstantsMod, only : r8 => fates_r8
   use              FatesArgumentUtils, only : command_line_arg
   use             FatesUnitTestIOMod,  only : OpenNCFile, GetVar, CloseNCFile, RegisterNCDims
-  use               ftorch,            only : torch_tensor, torch_tensor_from_array, torch_kCPU
-  !use FTorch_cesm_interface,            only : torch_tensor, torch_tensor_from_array, torch_kCPU, torch_model
-  use               ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
-                                              torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
 
   implicit none
 
-  ! define ML model
-  character(len=256) :: cb_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
-  !character(len=256) :: lstm_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
-  !type(torch_model) :: model_pytorch                                    
-
-  ! setup Fortran data structures  
-  type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
-  integer                                  :: in_layout(1) = [1]
-  integer                                  :: out_layout(1) = [1] 
+  ! define ML phenoogy pytorch model
+  !character(len=256) :: the_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
+  character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
   
-  real(r8) :: doy ! day of year (used to identify solstace) 
-
   real(8), dimension(10) :: dummy_lai
   integer :: sos_flag, n
 
@@ -31,68 +19,42 @@ program MLPhenology
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
 
+  real(r8)                                       :: out_data(5)       ! output from the lstm model (lai)
+  
+  real(r8)                                       :: soilt            ! soil temperature at 12cm
+  real(r8)                                       :: doy ! day of year (used to identify solstace) 
   real(r8)                                       :: onset_gdd      ! onset growing degree days 
   real(r8)                                       :: onset_gddflag  ! Onset freeze flag
+  logical                                        :: do_onset       ! Flag if onset should happen
 
-  !real(r8)                                       :: in_data(1) = 1.0
-  real(r8),              dimension(60,4), target :: in_data
-  real(r8),                 dimension(1), target :: out_data
-
-
-
+  
   ! Load forcing data
   datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
   call load_met_forcing(datm_file, ta, pr, sw, lai)
 
-  ! Populate input data (first n_input days)
-  in_data(:,1) = lai(1:60)
-  in_data(:,2) = ta(1:60)
-  in_data(:,3) = pr(1:60)
-  in_data(:,4) = sw(1:60)
-
   ! ======================================
-  ! initialize
-  doy = 0.0_r8
+  ! test CLM SeasonalDecidOnset function
+  doy = 1.0_r8
   onset_gdd = 0.0_r8
   onset_gddflag = 1.0_r8
 
+  soilt = ta(doy)-10.0_r8
+
+  do_onset = SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, doy )
+  print *, "onset_gdd: ", onset_gdd
+  print *, "onset_gddflag: ", onset_gddflag
 
   ! ====================================
   ! test SOS
   n = 10
   dummy_lai = (/1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0/)
   call get_sos(dummy_lai, n, sos_flag)
-  print *, "SOS Flag:", sos_flag
-  
+  print *, "start of season Flag:", sos_flag
 
-  !===============
-  ! load pytorch model
-
-  !call torch_model_load(model_pytorch, trim(cb_torch_model), torch_kCPU)
-  
-  ! set input data 
-  !in_data = 0.5_r8
-  !call random_number(in_data(:,1))   ! fill first column with random numbers in [0,1)
-
-  !print *, in_data(1:5, :)
-  
-  !print *, in_data
-  !print *, 'Shape of input_data:', size(in_data, 1), 'rows ×', size(in_data, 2), 'columns'
-  
-
-  !===============
-  ! run pytorch model
-
-  !call torch_tensor_from_array(in_tensor(1), in_data, in_layout, torch_kCPU)
-  !in_tensor(1) = torch_tensor_from_array(in_data, in_layout, torch_kCPU)
-  !print *, "Tensor shape: ", shape(in_tensor)
-  !call torch_tensor_from_array(out_tensor(1), out_data, out_layout, torch_kCPU)
-  !call torch_model_forward(model_pytorch, in_tensor, out_tensor)
-
-  !call torch_delete(in_tensor(1))
-  !call torch_delete(out_tensor(1)) 
-
-  print *, "Hello Phenology"
+  ! ========================================
+  ! test lstm
+  call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
+  print *, out_data
 
   contains
   
@@ -245,6 +207,51 @@ program MLPhenology
             do_onset = .true.
         end if
     
-      end function SeasonalDecidOnset
+    end function SeasonalDecidOnset
+
+    !-----------------------------------------------------------------------
+    subroutine run_pytorch_model (the_torch_model, ta, pr, sw, lai, doy, out_data)
+
+        use   FatesConstantsMod, only : r8 => fates_r8
+        use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
+                                        torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
+        
+        implicit none
+    
+        ! Arguments
+        character(len=*), intent(in) :: the_torch_model
+        real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:)
+        real(r8),         intent(in) :: doy            ! day of year
+        real(r8),        intent(out) :: out_data(5)
+    
+        ! Local
+        type(torch_model) :: model_pytorch
+        type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
+        integer                                  :: in_layout(2) = [60, 4]
+        integer                                  :: out_layout(1) = [5]
+        real(r8),        dimension(60,4), target :: in_data
+
+        ! Populate input data (first n_input days)
+        in_data(:,1) = lai(1:60)
+        in_data(:,2) = ta(1:60)
+        in_data(:,3) = pr(1:60)
+        in_data(:,4) = sw(1:60)
+    
+        !===============
+        ! load pytorch model
+        
+        call torch_model_load(model_pytorch, trim(the_torch_model), torch_kCPU)
+        
+        !===============
+        ! run pytorch model
+        
+        call torch_tensor_from_array(in_tensor(1), in_data, in_layout, torch_kCPU)
+        call torch_tensor_from_array(out_tensor(1), out_data, out_layout, torch_kCPU)
+        call torch_model_forward(model_pytorch, in_tensor, out_tensor)
+        
+        call torch_delete(in_tensor(1))
+        call torch_delete(out_tensor(1)) 
+    
+    end subroutine run_pytorch_model
         
 end program MLPhenology
