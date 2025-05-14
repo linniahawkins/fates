@@ -7,8 +7,8 @@ program MLPhenology
   implicit none
 
   ! define ML phenoogy pytorch model
-  !character(len=256) :: the_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
-  character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
+  character(len=256) :: the_torch_model = "/glade/u/home/linnia/MLphenology/models/example_LSTM_model_lh.pt"
+  !character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
   
   real(8), dimension(10) :: dummy_lai
   integer :: sos_flag, n
@@ -19,7 +19,7 @@ program MLPhenology
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
 
-  real(r8)                                       :: out_data(5)       ! output from the lstm model (lai)
+  real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
   
   real(r8)                                       :: soilt            ! soil temperature at 12cm
   real(r8)                                       :: doy ! day of year (used to identify solstace) 
@@ -54,7 +54,7 @@ program MLPhenology
   ! ========================================
   ! test lstm
   call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
-  print *, out_data
+  print *, "predicted LAI:", out_data
 
   contains
   
@@ -212,7 +212,7 @@ program MLPhenology
     !-----------------------------------------------------------------------
     subroutine run_pytorch_model (the_torch_model, ta, pr, sw, lai, doy, out_data)
 
-        use   FatesConstantsMod, only : r8 => fates_r8
+        use   iso_c_binding,     only : c_float, c_int
         use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
                                         torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
         
@@ -222,20 +222,20 @@ program MLPhenology
         character(len=*), intent(in) :: the_torch_model
         real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:)
         real(r8),         intent(in) :: doy            ! day of year
-        real(r8),        intent(out) :: out_data(5)
+        real(r8),        intent(out) :: out_data(1,5)
     
         ! Local
         type(torch_model) :: model_pytorch
         type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
-        integer                                  :: in_layout(2) = [60, 4]
-        integer                                  :: out_layout(1) = [5]
-        real(r8),        dimension(60,4), target :: in_data
+        integer(c_int)                                  :: in_layout(3) = [1,2,3]
+        integer(c_int)                                  :: out_layout(2) = [1,2]
+        real(c_float),        dimension(1,60,4), target :: in_data
 
         ! Populate input data (first n_input days)
-        in_data(:,1) = lai(1:60)
-        in_data(:,2) = ta(1:60)
-        in_data(:,3) = pr(1:60)
-        in_data(:,4) = sw(1:60)
+        in_data(1,:,1) = real(lai(1:60), c_float)
+        in_data(1,:,2) = real(ta(1:60), c_float)
+        in_data(1,:,3) = real(pr(1:60), c_float)
+        in_data(1,:,4) = real(sw(1:60), c_float)
     
         !===============
         ! load pytorch model
