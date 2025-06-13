@@ -1,4 +1,4 @@
-program MLPhenology
+program MLBtranTest
 
   use               FatesConstantsMod, only : r8 => fates_r8
   use              FatesArgumentUtils, only : command_line_arg

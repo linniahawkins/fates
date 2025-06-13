@@ -10,14 +10,14 @@ from functional_class import FunctionalTest
 
 
 class MLBtranTest(FunctionalTest):
-    """Phenology test class
+    """ML Btran test class
     """
 
-    name = "phenology"
+    name = "ml_btran"
 
     def __init__(self, test_dict):
         super().__init__(
-            PhenologyTest.name,
+            MLBtranTest.name,
             test_dict["test_dir"],
             test_dict["test_exe"],
             test_dict["out_file"],
