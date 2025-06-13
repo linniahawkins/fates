@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.12)
-project(fatesMLBtran LANGUAGES Fortran)
-enable_language(Fortran)
+#cmake_minimum_required(VERSION 3.12)
+#project(fatesMLBtran LANGUAGES Fortran)
+#enable_language(Fortran)
 set(btran_sources MLBtranTest.F90)
 
 set(USE_FTORCH ON CACHE BOOL "Enable internal FTorch build")
