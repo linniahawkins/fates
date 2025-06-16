@@ -8,10 +8,8 @@ program MLBtranTest
 
   ! define ML phenoogy pytorch model
   character(len=256) :: the_torch_model = "/glade/u/home/linnia/MLphenology/models/example_LSTM_model_lh.pt"
-  !character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
-  
+
   real(8), dimension(10) :: dummy_lai
-  integer :: sos_flag, n
 
   character(len=:),                  allocatable :: datm_file            ! input DATM 
   real(r8),                          allocatable :: ta(:)         ! daily air temperature [degC]
@@ -21,35 +19,10 @@ program MLBtranTest
 
   real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
   
-  real(r8)                                       :: soilt            ! soil temperature at 12cm
-  real(r8)                                       :: doy ! day of year (used to identify solstace) 
-  real(r8)                                       :: onset_gdd      ! onset growing degree days 
-  real(r8)                                       :: onset_gddflag  ! Onset freeze flag
-  logical                                        :: do_onset       ! Flag if onset should happen
-
-  
+  ! ========================================
   ! Load forcing data
   datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
   call load_met_forcing(datm_file, ta, pr, sw, lai)
-
-  ! ======================================
-  ! test CLM SeasonalDecidOnset function
-  doy = 1.0_r8
-  onset_gdd = 0.0_r8
-  onset_gddflag = 1.0_r8
-
-  soilt = ta(doy)-10.0_r8
-
-  do_onset = SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, doy )
-  print *, "onset_gdd: ", onset_gdd
-  print *, "onset_gddflag: ", onset_gddflag
-
-  ! ====================================
-  ! test SOS
-  n = 10
-  dummy_lai = (/1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0/)
-  call get_sos(dummy_lai, n, sos_flag)
-  print *, "start of season Flag:", sos_flag
 
   ! ========================================
   ! test lstm
@@ -254,4 +227,4 @@ program MLBtranTest
     
     end subroutine run_pytorch_model
         
-end program MLPhenology
+end program MLBtranTest
