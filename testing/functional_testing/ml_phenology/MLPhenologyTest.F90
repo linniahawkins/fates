@@ -55,11 +55,6 @@ program MLPhenology
   call get_sos(dummy_lai, n, sos_flag)
   print *, "start of season Flag:", sos_flag
 
-  ! ========================================
-  ! test lstm
-  !call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
-  !print *, "LSTM predicted LAI:", out_data
-
 
   ! ========================================
   ! test tft
@@ -222,55 +217,7 @@ program MLPhenology
     end function SeasonalDecidOnset
 
     !-----------------------------------------------------------------------
-    subroutine run_pytorch_model (the_torch_model, ta, pr, sw, lai, doy, out_data)
 
-        use   iso_c_binding,     only : c_float, c_int
-        use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
-                                        torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
-        
-        implicit none
-    
-        ! Arguments
-        character(len=*), intent(in) :: the_torch_model
-        real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:)
-        real(r8),         intent(in) :: doy            ! day of year
-        real(r8),        intent(out) :: out_data(1,10)
-    
-        ! Local
-        type(torch_model) :: model_pytorch
-        type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
-        integer(c_int)                                  :: in_layout(3) = [1,2,3]
-        integer(c_int)                                  :: out_layout(2) = [1,2]
-        real(c_float),        dimension(1,60,4), target :: in_data
-
-        ! Check input array lengths
-        if (size(lai) < 60 .or. size(ta) < 60 .or. size(pr) < 60 .or. size(sw) < 60) then
-          print *, "Error: Input arrays must have at least 60 elements."
-          stop 1
-        end if
-
-        ! Populate input data (first n_input days)
-        in_data(1,:,1) = real(lai(1:60), c_float)
-        in_data(1,:,2) = real(ta(1:60), c_float)
-        in_data(1,:,3) = real(pr(1:60), c_float)
-        in_data(1,:,4) = real(sw(1:60), c_float)
-    
-        !===============
-        ! load pytorch model
-        
-        call torch_model_load(model_pytorch, trim(the_torch_model), torch_kCPU)
-        
-        !===============
-        ! run pytorch model
-        
-        call torch_tensor_from_array(in_tensor(1), in_data, in_layout, torch_kCPU)
-        call torch_tensor_from_array(out_tensor(1), out_data, out_layout, torch_kCPU)
-        call torch_model_forward(model_pytorch, in_tensor, out_tensor)
-        
-        call torch_delete(in_tensor(1))
-        call torch_delete(out_tensor(1)) 
-    
-    end subroutine run_pytorch_model
 
     subroutine next_ten_days(doy, doy_arr)
       real(r8), intent(in)  :: doy
