@@ -14,6 +14,7 @@ link_directories(${NETCDF_C_DIR}/lib
                 ${NETCDF_FORTRAN_DIR}/lib
                 ${PFUNIT_TOP_DIR}/lib)
                 
+                
 add_executable(FATES_allom_exe ${allom_sources})
 
 target_link_libraries(FATES_allom_exe
@@ -21,4 +22,5 @@ target_link_libraries(FATES_allom_exe
                   netcdff
                   fates
                   csm_share
+                  ${Torch_LIB_PATH}
                   funit)

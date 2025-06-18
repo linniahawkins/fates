@@ -6,5 +6,6 @@ add_executable(FATES_math_exe ${math_sources})
 
 target_link_libraries(FATES_math_exe
                   fates
+                  ${Torch_LIB_PATH}
                   csm_share
                   funit)

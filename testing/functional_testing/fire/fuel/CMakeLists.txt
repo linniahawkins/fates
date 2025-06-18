@@ -22,5 +22,6 @@ target_link_libraries(FATES_fuel_exe
                   netcdff
                   fates
                   csm_share
+                  ${Torch_LIB_PATH}
                   funit)
                   
