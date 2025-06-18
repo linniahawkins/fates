@@ -8,6 +8,7 @@ program MLPhenology
 
   ! define ML phenoogy pytorch model
   character(len=256) :: the_torch_model = "/glade/u/home/linnia/MLphenology/models/example_LSTM_model_lh.pt"
+  character(len=256) :: the_tft_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/tft_scripted.pt"
   !character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
   
   real(8), dimension(10) :: dummy_lai
@@ -19,12 +20,15 @@ program MLPhenology
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
 
+  real(r8)                                       :: doy_arr(10)              ! DOY array
   real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
-  
+  real(r8)                                       :: out_data_tft(1,10)       ! output from the tft model (lai)
+
   real(r8)                                       :: soilt            ! soil temperature at 12cm
   real(r8)                                       :: doy ! day of year (used to identify solstace) 
   real(r8)                                       :: onset_gdd      ! onset growing degree days 
   real(r8)                                       :: onset_gddflag  ! Onset freeze flag
+
   logical                                        :: do_onset       ! Flag if onset should happen
 
   
@@ -53,8 +57,16 @@ program MLPhenology
 
   ! ========================================
   ! test lstm
-  call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
-  print *, "predicted LAI:", out_data
+  !call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
+  !print *, "LSTM predicted LAI:", out_data
+
+
+  ! ========================================
+  ! test tft
+
+  call next_ten_days(doy, doy_arr)
+  call run_tft_model(the_tft_torch_model, ta, pr, sw, lai, doy_arr, out_data_tft)
+  print *, "TFT predicted LAI:", out_data_tft
 
   contains
   
@@ -222,7 +234,7 @@ program MLPhenology
         character(len=*), intent(in) :: the_torch_model
         real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:)
         real(r8),         intent(in) :: doy            ! day of year
-        real(r8),        intent(out) :: out_data(1,5)
+        real(r8),        intent(out) :: out_data(1,10)
     
         ! Local
         type(torch_model) :: model_pytorch
@@ -230,6 +242,12 @@ program MLPhenology
         integer(c_int)                                  :: in_layout(3) = [1,2,3]
         integer(c_int)                                  :: out_layout(2) = [1,2]
         real(c_float),        dimension(1,60,4), target :: in_data
+
+        ! Check input array lengths
+        if (size(lai) < 60 .or. size(ta) < 60 .or. size(pr) < 60 .or. size(sw) < 60) then
+          print *, "Error: Input arrays must have at least 60 elements."
+          stop 1
+        end if
 
         ! Populate input data (first n_input days)
         in_data(1,:,1) = real(lai(1:60), c_float)
@@ -253,5 +271,110 @@ program MLPhenology
         call torch_delete(out_tensor(1)) 
     
     end subroutine run_pytorch_model
+
+    subroutine next_ten_days(doy, doy_arr)
+      real(r8), intent(in)  :: doy
+      real(r8), intent(out) :: doy_arr(10)
+      integer :: i
+      real(r8) :: mod_doy
+      mod_doy = real(365, r8)
+
+      do i = 1, 10
+        doy_arr(i) = mod(doy + real(i, r8) - real(1, r8), mod_doy) + real(1, r8)
+      end do
+    end subroutine next_ten_days
+
+    subroutine run_tft_model (the_tft_torch_model, ta, pr, sw, lai, doy_arr, out_data_tft)
+
+        use   iso_c_binding,     only : c_float, c_int
+        use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
+                                        torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete
+        implicit none
+    
+        ! Arguments
+        character(len=*), intent(in) :: the_tft_torch_model
+        real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:), doy_arr(10)
+        real(r8),         intent(out) :: out_data_tft(1,10)
+
+        ! Local
+        type(torch_model)                             :: model_pytorch
+        type(torch_tensor), allocatable               :: inputs(:)
+        type(torch_tensor), allocatable               :: outputs(:)
+        integer(c_int),     dimension(0)              :: empty_cat_raw
+        real(c_float),      dimension(1,2)            :: static_num                           ! latitude, longitude
+        integer(c_int),     dimension(1,0)            :: static_cat                           ! no static categorical features
+        real(c_float),      dimension(1,60,8)         :: hist_num                             ! tmin, tmax, precip, rad, photoperiod, swvl1, doy, lai
+        integer(c_int),     dimension(1,60,0)         :: hist_cat                             ! no historical categorical features
+        real(c_float),      dimension(1,10,1)         :: fut_num                              ! doy
+        integer(c_int),     dimension(1,10,0)         :: fut_cat                              ! no future categorical features
+        real(c_float),      dimension(1,10,3)         :: out_quantiles                           ! output quantiles (0.1, 0.5, 0.9)
+        integer(c_int),     allocatable               :: L2(:), L3(:)
+        integer                                       :: n_in, n_out, i
+        n_in  = 6                                                                             ! 6 input tensors
+        n_out = 1                                                                             ! 1 output tensor (the 3‐quantile forecast)
+
+
+        !---  Populate input data (first n_input days)
+        static_num= reshape([ 34.5_c_float, -117.1_c_float ], [1,2])    ! TD: substitute with true lat/lon
+
+        hist_num(1,:,1)= real(ta(1:60), c_float)                        ! TD: replace with tmin
+        hist_num(1,:,2)= real(ta(1:60), c_float)                        ! TD: replace with tmax 
+        hist_num(1,:,3)= real(pr(1:60), c_float)
+        hist_num(1,:,4)= real(sw(1:60), c_float)
+        ! TODO: Replace the following placeholder assignments with the correct variables for each feature
+        hist_num(1,:,5)= real(ta(1:60), c_float)                        ! TODO: replace with photoperiod variable
+        hist_num(1,:,6)= real(ta(1:60), c_float)                        ! TODO: replace with soil moisture variable
+        hist_num(1,:,7)= real(ta(1:60), c_float)                        ! TODO: replace with day of year variable
+        hist_num(1,:,8)= real(ta(1:60), c_float)                        ! TODO: replace with lai variable
+
+        fut_num(1,:,1) = real(doy_arr(1:10), c_float)                   ! future 10 days of year
+
+        static_cat    = reshape(empty_cat_raw, [1,0])                   ! no static categorical features
+        hist_cat      = reshape(empty_cat_raw, [1,60,0])                ! no historical categorical features
+        fut_cat       = reshape(empty_cat_raw, [1,10,0])                ! no future categorical features
+
+        print *, "hist_num min/max:", minval(hist_num), maxval(hist_num)
+        print *, "fut_num  min/max:", minval(fut_num),  maxval(fut_num)
+        !===============
+        ! load pytorch model
+        call torch_model_load(model_pytorch, trim(the_tft_torch_model), torch_kCPU)
+
+        !===============
+        ! Allocate arrays of tensor handles
+        allocate(inputs(n_in))
+        allocate(outputs(n_out))
+
+        allocate(L2(2));  L2  = [1_c_int,2_c_int]
+        allocate(L3(3)); L3 = [1_c_int,2_c_int,3_c_int]
+                
+        !===============
+        ! Wrap each Fortran array in a torch_tensor
+        call torch_tensor_from_array(inputs(1), static_num, L2, torch_kCPU)
+        call torch_tensor_from_array(inputs(2), static_cat, L2, torch_kCPU)
+        call torch_tensor_from_array(inputs(3), hist_num,   L3, torch_kCPU)
+        call torch_tensor_from_array(inputs(4), hist_cat,   L3, torch_kCPU)
+        call torch_tensor_from_array(inputs(5), fut_num,    L3, torch_kCPU)
+        call torch_tensor_from_array(inputs(6), fut_cat,    L3, torch_kCPU)
+
+        !===============
+        ! Wrap the output buffer
+        call torch_tensor_from_array(outputs(1), out_quantiles, L3, torch_kCPU)
+    
+        !===============
+        ! run pytorch model
+        call torch_model_forward(model_pytorch, inputs, outputs)
+        !===============
+        ! extract median quantile (0.5)
+        out_data_tft(1,:) = real(out_quantiles(1,:,2), kind=r8)
+        !===============
+        ! free pytorch model and tensors
+        ! call torch_model_free(model_pytorch)                                       ! TO DO: confirm torch_model_free in ftorch
+        do i = 1, n_in
+          call torch_delete(inputs(i))
+        end do
+        call torch_delete(outputs(1))
+        deallocate(inputs, outputs, L2, L3)
+
+    end subroutine run_tft_model
         
 end program MLPhenology
