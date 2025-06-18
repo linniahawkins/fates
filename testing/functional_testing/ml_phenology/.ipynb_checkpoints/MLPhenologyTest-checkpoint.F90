@@ -7,22 +7,26 @@ program MLPhenology
   implicit none
 
   ! define ML phenoogy pytorch model
-  !character(len=256) :: the_torch_model = "/glade/u/home/linnia/FTorch_example/constant_model.pt"
-  character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
+  character(len=256) :: the_torch_model = "/glade/u/home/linnia/MLphenology/models/example_LSTM_model_lh.pt"
+  !character(len=256) :: the_torch_model = "/glade/u/home/ayal/phenology-ml-clm/models/example_LSTM_model_v1.pt"
   
   real(8), dimension(10) :: dummy_lai
   integer :: sos_flag, n
 
   character(len=:),                  allocatable :: datm_file            ! input DATM 
-  real(r8),                          allocatable :: ta(:)         ! daily air temperature [degC]
+  real(r8),                          allocatable :: ta_min(:)         ! daily min air temperature [degC]
+  real(r8),                          allocatable :: ta_max(:)         ! daily max air temperature [degC]
   real(r8),                          allocatable :: pr(:)            ! daily precipitation [mm]
   real(r8),                          allocatable :: sw(:)                ! daily shortwave radiation (W/m2)
   real(r8),                          allocatable :: lai(:)              ! daily LAI (m2/m2)
+  real(r8),                          allocatable :: soilm(:)              ! daily soil moisture at layer 3 (kg/m2)
+  real(r8),                          allocatable :: doy(:)              ! day of year
+  real(r8),                          allocatable :: photo(:)              ! daily photoperiod (seconds)
 
-  real(r8)                                       :: out_data(5)       ! output from the lstm model (lai)
-  
-  real(r8)                                       :: soilt            ! soil temperature at 12cm
-  real(r8)                                       :: doy ! day of year (used to identify solstace) 
+  real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
+
+  real(r8)                                       :: dayofyear ! day of year 
+  real(r8)                                       :: soilt            ! soil temperature at 12cm 
   real(r8)                                       :: onset_gdd      ! onset growing degree days 
   real(r8)                                       :: onset_gddflag  ! Onset freeze flag
   logical                                        :: do_onset       ! Flag if onset should happen
@@ -30,17 +34,17 @@ program MLPhenology
   
   ! Load forcing data
   datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
-  call load_met_forcing(datm_file, ta, pr, sw, lai)
-
+  call load_met_forcing(datm_file, ta_min, ta_max, pr, sw, lai, soilm, doy, photo)
+  
   ! ======================================
   ! test CLM SeasonalDecidOnset function
-  doy = 1.0_r8
+  dayofyear = 1.0_r8
   onset_gdd = 0.0_r8
   onset_gddflag = 1.0_r8
 
-  soilt = ta(doy)-10.0_r8
+  soilt = ta_min(dayofyear)-10.0_r8
 
-  do_onset = SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, doy )
+  do_onset = SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, dayofyear )
   print *, "onset_gdd: ", onset_gdd
   print *, "onset_gddflag: ", onset_gddflag
 
@@ -53,13 +57,13 @@ program MLPhenology
 
   ! ========================================
   ! test lstm
-  call run_pytorch_model(the_torch_model, ta, pr, sw, lai, doy, out_data)
-  print *, out_data
+  call run_pytorch_model(the_torch_model, ta_min, pr, sw, lai, dayofyear, out_data)
+  print *, "predicted LAI:", out_data
 
   contains
   
     !-----------------------------------------------------------------------
-    subroutine load_met_forcing ( datm_file, ta, pr, sw, lai)
+    subroutine load_met_forcing ( datm_file, ta_min, ta_max, pr, sw, lai, soilm, doy, photo)
       ! 
       use FatesConstantsMod, only: r8 => fates_r8
       use FatesUnitTestIOMod, only: OpenNCFile, GetVar, CloseNCFile
@@ -68,21 +72,25 @@ program MLPhenology
     
       ! Arguments
       character(len=*), intent(in) :: datm_file
-      real(r8), allocatable, intent(out) :: ta(:), pr(:), sw(:), lai(:)
+      real(r8), allocatable, intent(out) :: ta_min(:), ta_max(:), pr(:), sw(:), lai(:), soilm(:), doy(:), photo(:)
     
       ! Local
       integer :: ncid
     
       ! Allocate arrays
-      allocate(ta(365), pr(365), sw(365), lai(365))
+      allocate(ta_min(5844), ta_max(5844), pr(5844), sw(5844), lai(5844), soilm(5844), doy(5844), photo(5844))
     
       ! Open and read
       call OpenNCFile(trim(datm_file), ncid, 'read')
       
-      call GetVar(ncid, 'ta', ta)
+      call GetVar(ncid, 'ta_min', ta_min)
+      call GetVar(ncid, 'ta_max', ta_max)
       call GetVar(ncid, 'pr', pr)
       call GetVar(ncid, 'sw', sw)
       call GetVar(ncid, 'lai', lai)
+      call GetVar(ncid, 'soilm', soilm)
+      call GetVar(ncid, 'doy', doy)
+      call GetVar(ncid, 'photo', photo)
     
       call CloseNCFile(ncid)
     
@@ -141,7 +149,7 @@ program MLPhenology
     end subroutine get_sos
 
   !-----------------------------------------------------------------------
-    function SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, doy ) &
+    function SeasonalDecidOnset( onset_gdd, onset_gddflag, soilt, dayofyear ) &
                        result( do_onset )
 
         ! !DESCRIPTION:
@@ -151,7 +159,7 @@ program MLPhenology
         real(r8), intent(INOUT) :: onset_gdd      ! onset growing degree days 
         real(r8), intent(INOUT) :: onset_gddflag  ! Onset freeze flag
         real(r8), intent(IN)    :: soilt          ! Soil temperature at specific level for this evaluation
-        real(r8), intent(IN)    :: doy            ! day of year
+        real(r8), intent(IN)    :: dayofyear            ! day of year
         logical :: do_onset                       ! Flag if onset should happen (return value)
 
         ! !LOCAL VARIABLES:
@@ -169,7 +177,7 @@ program MLPhenology
         crit_onset_gdd = exp(4.8_r8 + 0.13_r8*(annavg_t2m_patch))
     
         ! set flag for solstice period (winter->summer = 1, summer->winter = 0)
-        if (doy <= 171) then
+        if (dayofyear <= 171) then
           ws_flag = 1._r8
         else
           ws_flag = 0._r8
@@ -210,9 +218,9 @@ program MLPhenology
     end function SeasonalDecidOnset
 
     !-----------------------------------------------------------------------
-    subroutine run_pytorch_model (the_torch_model, ta, pr, sw, lai, doy, out_data)
+    subroutine run_pytorch_model (the_torch_model, ta_min, pr, sw, lai, dayofyear, out_data)
 
-        use   FatesConstantsMod, only : r8 => fates_r8
+        use   iso_c_binding,     only : c_float, c_int
         use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
                                         torch_tensor, torch_tensor_from_array, torch_kCPU,  torch_delete  
         
@@ -220,22 +228,22 @@ program MLPhenology
     
         ! Arguments
         character(len=*), intent(in) :: the_torch_model
-        real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:)
-        real(r8),         intent(in) :: doy            ! day of year
-        real(r8),        intent(out) :: out_data(5)
+        real(r8),         intent(in) :: ta_min(:), pr(:), sw(:), lai(:)
+        real(r8),         intent(in) :: dayofyear            ! day of year
+        real(r8),        intent(out) :: out_data(1,5)
     
         ! Local
         type(torch_model) :: model_pytorch
         type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
-        integer                                  :: in_layout(2) = [60, 4]
-        integer                                  :: out_layout(1) = [5]
-        real(r8),        dimension(60,4), target :: in_data
+        integer(c_int)                                  :: in_layout(3) = [1,2,3]
+        integer(c_int)                                  :: out_layout(2) = [1,2]
+        real(c_float),        dimension(1,60,4), target :: in_data
 
         ! Populate input data (first n_input days)
-        in_data(:,1) = lai(1:60)
-        in_data(:,2) = ta(1:60)
-        in_data(:,3) = pr(1:60)
-        in_data(:,4) = sw(1:60)
+        in_data(1,:,1) = real(lai(1:60), c_float)
+        in_data(1,:,2) = real(ta_min(1:60), c_float)
+        in_data(1,:,3) = real(pr(1:60), c_float)
+        in_data(1,:,4) = real(sw(1:60), c_float)
     
         !===============
         ! load pytorch model
