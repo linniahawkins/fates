@@ -300,7 +300,7 @@ program MLPhenology
         type(torch_model)                             :: model_pytorch
         type(torch_tensor), allocatable               :: inputs(:)
         type(torch_tensor), allocatable               :: outputs(:)
-        integer(c_int),     dimension(0)              :: empty_cat_raw
+        real(c_float),     dimension(0)               :: empty_cat_raw
         real(c_float),      dimension(1,2)            :: static_num                           ! latitude, longitude
         integer(c_int),     dimension(1,0)            :: static_cat                           ! no static categorical features
         real(c_float),      dimension(1,60,8)         :: hist_num                             ! tmin, tmax, precip, rad, photoperiod, swvl1, doy, lai
@@ -310,12 +310,15 @@ program MLPhenology
         real(c_float),      dimension(1,10,3)         :: out_quantiles                           ! output quantiles (0.1, 0.5, 0.9)
         integer(c_int),     allocatable               :: L2(:), L3(:)
         integer                                       :: n_in, n_out, i
+        real(c_float), dimension(8) :: hmin, hmax
+        real(c_float)              :: fmin, fmax
+        integer                    :: j
+
         n_in  = 6                                                                             ! 6 input tensors
         n_out = 1                                                                             ! 1 output tensor (the 3‐quantile forecast)
 
-
         !---  Populate input data (first n_input days)
-        static_num= reshape([ 34.5_c_float, -117.1_c_float ], [1,2])    ! TD: substitute with true lat/lon
+        static_num= reshape([ 1_c_float, 1_c_float ], [1,2])    ! TD: substitute with true lat/lon
 
         hist_num(1,:,1)= real(ta(1:60), c_float)                        ! TD: replace with tmin
         hist_num(1,:,2)= real(ta(1:60), c_float)                        ! TD: replace with tmax 
@@ -333,8 +336,26 @@ program MLPhenology
         hist_cat      = reshape(empty_cat_raw, [1,60,0])                ! no historical categorical features
         fut_cat       = reshape(empty_cat_raw, [1,10,0])                ! no future categorical features
 
-        print *, "hist_num min/max:", minval(hist_num), maxval(hist_num)
-        print *, "fut_num  min/max:", minval(fut_num),  maxval(fut_num)
+        ! ---- normalize historical channels ----
+        do j = 1, 8
+          hmin(j) = minval( hist_num(1, :, j) )
+          hmax(j) = maxval( hist_num(1, :, j) )
+          if (hmax(j) > hmin(j)) then
+            hist_num(1, :, j) = ( hist_num(1, :, j) - hmin(j) ) / (hmax(j) - hmin(j))
+          else
+            hist_num(1, :, j) = 0.0_c_float  ! or leave at 0 if flat
+          end if
+        end do
+
+        ! ---- normalize future single channel ----
+        fmin = minval( fut_num(1, :, 1) )
+        fmax = maxval( fut_num(1, :, 1) )
+        if (fmax > fmin) then
+          fut_num(1, :, 1) = ( fut_num(1, :, 1) - fmin ) / (fmax - fmin)
+        else
+          fut_num(1, :, 1) = 0.0_c_float
+        end if
+
         !===============
         ! load pytorch model
         call torch_model_load(model_pytorch, trim(the_tft_torch_model), torch_kCPU)
@@ -376,5 +397,5 @@ program MLPhenology
         deallocate(inputs, outputs, L2, L3)
 
     end subroutine run_tft_model
-        
+  
 end program MLPhenology
