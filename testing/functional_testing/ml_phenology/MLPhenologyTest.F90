@@ -27,10 +27,6 @@ program MLPhenology
   real(r8)                                       :: doy_arr(10)              ! DOY array
   real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
   real(r8)                                       :: out_data_tft(1,10)       ! output from the tft model (lai)
-
-  real(r8)                                       :: soilt            ! soil temperature at 12cm
-  real(r8)                                       :: doy ! day of year (used to identify solstace) 
-
   real(r8)                                       :: dayofyear ! day of year 
   real(r8)                                       :: soilt            ! soil temperature at 12cm 
   real(r8)                                       :: onset_gdd      ! onset growing degree days 
