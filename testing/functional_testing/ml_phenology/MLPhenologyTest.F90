@@ -26,16 +26,13 @@ program MLPhenology
 
   real(r8)                                       :: doy_arr(10)              ! DOY array
   real(r8)                                       :: out_data(1,5)       ! output from the lstm model (lai)
-<<<<<<< HEAD
-
-  real(r8)                                       :: dayofyear ! day of year 
-  real(r8)                                       :: soilt            ! soil temperature at 12cm 
-=======
   real(r8)                                       :: out_data_tft(1,10)       ! output from the tft model (lai)
 
   real(r8)                                       :: soilt            ! soil temperature at 12cm
   real(r8)                                       :: doy ! day of year (used to identify solstace) 
->>>>>>> tft_script_test
+
+  real(r8)                                       :: dayofyear ! day of year 
+  real(r8)                                       :: soilt            ! soil temperature at 12cm 
   real(r8)                                       :: onset_gdd      ! onset growing degree days 
   real(r8)                                       :: onset_gddflag  ! Onset freeze flag
 
@@ -67,17 +64,11 @@ program MLPhenology
 
 
   ! ========================================
-<<<<<<< HEAD
-  ! test lstm
-  call run_pytorch_model(the_torch_model, ta_min, pr, sw, lai, dayofyear, out_data)
-  print *, "predicted LAI:", out_data
-=======
   ! test tft
 
-  call next_ten_days(doy, doy_arr)
-  call run_tft_model(the_tft_torch_model, ta, pr, sw, lai, doy_arr, out_data_tft)
+  call next_ten_days(dayofyear, doy_arr)
+  call run_tft_model(the_tft_torch_model, ta_min, pr, sw, lai, doy_arr, out_data_tft)
   print *, "TFT predicted LAI:", out_data_tft
->>>>>>> tft_script_test
 
   contains
   
@@ -237,25 +228,21 @@ program MLPhenology
     end function SeasonalDecidOnset
 
     !-----------------------------------------------------------------------
-<<<<<<< HEAD
-    subroutine run_pytorch_model (the_torch_model, ta_min, pr, sw, lai, dayofyear, out_data)
-=======
 
 
-    subroutine next_ten_days(doy, doy_arr)
-      real(r8), intent(in)  :: doy
+    subroutine next_ten_days(dayofyear, doy_arr)
+      real(r8), intent(in)  :: dayofyear
       real(r8), intent(out) :: doy_arr(10)
       integer :: i
       real(r8) :: mod_doy
       mod_doy = real(365, r8)
 
       do i = 1, 10
-        doy_arr(i) = mod(doy + real(i, r8) - real(1, r8), mod_doy) + real(1, r8)
+        doy_arr(i) = mod(dayofyear + real(i, r8) - real(1, r8), mod_doy) + real(1, r8)
       end do
     end subroutine next_ten_days
 
-    subroutine run_tft_model (the_tft_torch_model, ta, pr, sw, lai, doy_arr, out_data_tft)
->>>>>>> tft_script_test
+    subroutine run_tft_model (the_tft_torch_model, ta_min, pr, sw, lai, doy_arr, out_data_tft)
 
         use   iso_c_binding,     only : c_float, c_int
         use   ftorch,            only : torch_model, torch_model_load, torch_model_forward, &
@@ -263,28 +250,8 @@ program MLPhenology
         implicit none
     
         ! Arguments
-<<<<<<< HEAD
-        character(len=*), intent(in) :: the_torch_model
-        real(r8),         intent(in) :: ta_min(:), pr(:), sw(:), lai(:)
-        real(r8),         intent(in) :: dayofyear            ! day of year
-        real(r8),        intent(out) :: out_data(1,5)
-    
-        ! Local
-        type(torch_model) :: model_pytorch
-        type(torch_tensor), dimension(1)         :: in_tensor, out_tensor
-        integer(c_int)                                  :: in_layout(3) = [1,2,3]
-        integer(c_int)                                  :: out_layout(2) = [1,2]
-        real(c_float),        dimension(1,60,4), target :: in_data
-
-        ! Populate input data (first n_input days)
-        in_data(1,:,1) = real(lai(1:60), c_float)
-        in_data(1,:,2) = real(ta_min(1:60), c_float)
-        in_data(1,:,3) = real(pr(1:60), c_float)
-        in_data(1,:,4) = real(sw(1:60), c_float)
-    
-=======
         character(len=*), intent(in) :: the_tft_torch_model
-        real(r8),         intent(in) :: ta(:), pr(:), sw(:), lai(:), doy_arr(10)
+        real(r8),         intent(in) :: ta_min(:), pr(:), sw(:), lai(:), doy_arr(10)
         real(r8),         intent(out) :: out_data_tft(1,10)
 
         ! Local
@@ -311,15 +278,15 @@ program MLPhenology
         !---  Populate input data (first n_input days)
         static_num= reshape([ 1_c_float, 1_c_float ], [1,2])    ! TD: substitute with true lat/lon
 
-        hist_num(1,:,1)= real(ta(1:60), c_float)                        ! TD: replace with tmin
-        hist_num(1,:,2)= real(ta(1:60), c_float)                        ! TD: replace with tmax 
+        hist_num(1,:,1)= real(ta_min(1:60), c_float)                        ! TD: replace with tmin
+        hist_num(1,:,2)= real(ta_min(1:60), c_float)                        ! TD: replace with tmax 
         hist_num(1,:,3)= real(pr(1:60), c_float)
         hist_num(1,:,4)= real(sw(1:60), c_float)
         ! TODO: Replace the following placeholder assignments with the correct variables for each feature
-        hist_num(1,:,5)= real(ta(1:60), c_float)                        ! TODO: replace with photoperiod variable
-        hist_num(1,:,6)= real(ta(1:60), c_float)                        ! TODO: replace with soil moisture variable
-        hist_num(1,:,7)= real(ta(1:60), c_float)                        ! TODO: replace with day of year variable
-        hist_num(1,:,8)= real(ta(1:60), c_float)                        ! TODO: replace with lai variable
+        hist_num(1,:,5)= real(ta_min(1:60), c_float)                        ! TODO: replace with photoperiod variable
+        hist_num(1,:,6)= real(ta_min(1:60), c_float)                        ! TODO: replace with soil moisture variable
+        hist_num(1,:,7)= real(ta_min(1:60), c_float)                        ! TODO: replace with day of year variable
+        hist_num(1,:,8)= real(ta_min(1:60), c_float)                        ! TODO: replace with lai variable
 
         fut_num(1,:,1) = real(doy_arr(1:10), c_float)                   ! future 10 days of year
 
@@ -347,7 +314,6 @@ program MLPhenology
           fut_num(1, :, 1) = 0.0_c_float
         end if
 
->>>>>>> tft_script_test
         !===============
         ! load pytorch model
         call torch_model_load(model_pytorch, trim(the_tft_torch_model), torch_kCPU)
