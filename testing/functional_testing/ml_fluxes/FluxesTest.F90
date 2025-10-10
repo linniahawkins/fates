@@ -1,4 +1,4 @@
-program PTFTest
+program FluxesTest
 
   use               FatesConstantsMod, only : r8 => fates_r8
   use              FatesArgumentUtils, only : command_line_arg
@@ -122,4 +122,4 @@ program PTFTest
     
     end subroutine run_pytorch_model
         
-end program PTFTest
+end program FluxesTest
