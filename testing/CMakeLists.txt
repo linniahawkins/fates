@@ -11,6 +11,7 @@ add_subdirectory(functional_testing/patch fates_patch_ftest)
 add_subdirectory(functional_testing/ml_phenology ml_phenology_ftest)
 add_subdirectory(functional_testing/ml_ptf ml_ptf_ftest)
 add_subdirectory(functional_testing/ml_fluxes ml_fluxes_ftest)
+add_subdirectory(functional_testing/ml_example ml_example_ftest)
 
 ## Unit tests
 add_subdirectory(unit_testing/fire_weather_test fates_fire_weather_utest)

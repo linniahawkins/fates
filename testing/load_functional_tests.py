@@ -9,4 +9,5 @@ from functional_testing.patch.patch_test import PatchTest
 from functional_testing.ml_phenology.phen_test import PhenologyTest
 from functional_testing.ml_ptf.ptf_test import PTFTest
 from functional_testing.ml_fluxes.fluxes_test import FluxesTest
+from functional_testing.ml_example.example_test import exampleTest
 
