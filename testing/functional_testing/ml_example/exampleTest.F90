@@ -6,7 +6,7 @@ program exampleTest
 
   implicit none
 
-  ! define ML phenoogy pytorch model
+  ! define ML phenology pytorch model
   character(len=256) :: the_torch_model = "/glade/u/home/linnia/MLphenology/models/example_LSTM_model_lh.pt"
   
   real(8), dimension(10) :: dummy_lai
@@ -32,7 +32,8 @@ program exampleTest
 
   ! ======================================
   ! Load forcing data
-  datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai
+  ! the path to this file is set in /src/fates/testing/functional_tests.cfg
+  datm_file = command_line_arg(1) ! one year of daily ta, pr, sw, lai 
   call load_met_forcing(datm_file, ta_min, ta_max, pr, sw, lai, soilm, doy, photo)
   
   ! ========================================
